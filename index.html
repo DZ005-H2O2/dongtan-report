@@ -60,6 +60,9 @@ button{font-family:inherit;color:inherit}
 .lf{flex:none;display:flex;align-items:center;gap:6px;background:var(--soft);border-radius:10px;padding:7px 10px;
  font-size:12.5px;font-weight:600;color:var(--sub);white-space:nowrap;cursor:pointer;border:0}
 .lf b{color:var(--brand);font-weight:800}
+.lg{display:inline-block;font-size:11px;font-weight:800;padding:1px 7px;border-radius:999px;vertical-align:2px;white-space:nowrap}
+.lg.good{background:var(--good-bg);color:var(--good)} .lg.mid{background:#eef0f4;color:var(--sub)} .lg.low{background:#fff1e6;color:#c2410c}
+.kv .liq .v .lg{vertical-align:3px;font-size:10.5px}
 .lf .ic{font-size:14px}
 @media(max-width:560px){.kv{gap:6px}.kv div{padding:9px 9px}.kv .k{font-size:11px}.kv .v{font-size:14.5px}.kv .s{font-size:10.5px;line-height:1.35}}
 
@@ -486,6 +489,27 @@ function lifeItems(){
   return out;
 }
 function nearestAirport(la,lo){let best=null;(ALL.airport.stops||[]).forEach(s=>{const m=hav(la,lo,s.lat,s.lon);if(!best||m<best.m)best={s,m};});return best;}
+/* ════ 환금성: 회전율(같은 평형 동탄 평균 대비) + 매물 소진 기간 ════
+   회전율 = 신고가 끝난 최근 12개월(30~395일 전) 실거래 ÷ 해당 평형 세대수 — 최근 한 달은 신고 지연으로 덜 잡혀서 뺀다
+   매물 소진 = 지금 매물 수(중개사 중복 제거) ÷ 최근 6개월 월평균 거래 */
+function liq(d){const day=n=>{const t=new Date();t.setDate(t.getDate()-n);return ISO(t);};
+  const A=day(395),B=day(30),C=day(210),real=(d.deals||[]).filter(x=>!x.cancelled),hh=+d.hh||0;
+  const n12=real.filter(x=>x.date>=A&&x.date<B).length,n6=real.filter(x=>x.date>=C&&x.date<B).length,arts=(d.articles||[]).length;
+  return {n12,n6,hh,arts,to:hh?n12/hh*100:null,moi:n6&&arts?arts/(n6/6):null};}
+const _liqMed={};
+function liqMed(grp){if(grp in _liqMed)return _liqMed[grp];
+  const v=ALL.list.filter(t=>(t.grp||"84")===grp&&ALL.data[t.key]).map(t=>liq(ALL.data[t.key]).to).filter(x=>x!=null).sort((a,b)=>a-b),n=v.length;
+  return _liqMed[grp]=n?{med:n%2?v[(n-1)/2]:(v[n/2-1]+v[n/2])/2,n}:null;}
+function liqGrade(d,grp){const L2=liq(d),M=liqMed(grp||"84");if(L2.to==null||!M)return {...L2,grade:null};
+  const r=L2.to/M.med,g=r>=1.15?["good","좋음"]:r>=.85?["mid","보통"]:["low","낮음"];
+  return {...L2,r,med:M.med,peers:M.n,cls:g[0],grade:g[1],thin:L2.n12<15||L2.hh<200};}
+const GRPN={"84":"국평","59":"59㎡","대형":"대형"};
+function liqTile(){const g=(ALL.list.find(t=>t.key===CUR)||{}).grp||"84",q=liqGrade(D,g);
+  if(q.to==null)return `<div><div class="k">환금성</div><div class="v">-</div><div class="s">&nbsp;</div></div>`;
+  const tip=`연 회전율 ${q.to.toFixed(1)}% = 신고가 끝난 최근 12개월 실거래 ${q.n12}건 ÷ ${q.hh}세대 · ${GRPN[g]} 동탄 평균 ${q.med.toFixed(1)}%(${q.peers}곳)`+(q.moi?` · 매물 소진 약 ${Math.round(q.moi)}개월 = 지금 매물 ${q.arts}건 ÷ 월평균 거래`:"");
+  return `<div class="liq" title="${tip}"><div class="k">환금성</div>
+    <div class="v">${q.to.toFixed(1)}%${q.grade?` <span class="lg ${q.cls}">${q.grade}</span>`:""}</div>
+    <div class="s">평균의 ${q.r.toFixed(2)}배${q.moi?` · 소진 ~${Math.round(q.moi)}개월`:""}${q.thin?" · 표본 적음":""}${q.peers<4?` · 비교 ${q.peers}곳뿐`:""}</div></div>`;}
 function renderHero(){
   const h=D.hoga||{},y=D.ytd;
   const life=lifeItems().map(x=>`<button class="lf" data-cat="${x.cat}"><span class="ic">${x.ic}</span>${esc(x.t)} <b>${x.v}</b></button>`).join("");
@@ -494,7 +518,7 @@ function renderHero(){
    <div class="kv">
     <div><div class="k">최근 실거래</div><div class="v">${recent?eokS(recent.price):"-"}</div><div class="s">${recent?`${recent.date.slice(2).replace(/-/g,".")} · ${recent.floor||"?"}층 · ${recent.type}`:"거래 없음"}</div></div>
     <div><div class="k">현재 호가</div><div class="v">${h.art_lo!=null?`${h.art_lo}~${h.art_hi}억`:"매물 없음"}</div><div class="s">${h.art_med!=null?`중앙 ${h.art_med}억 · ${D.articles.length}건`:"&nbsp;"}</div></div>
-    <div><div class="k">최근 1년 거래</div><div class="v">${D.n12??"-"}건</div><div class="s">${D.turnover!=null?`세대의 ${D.turnover}%가 손바뀜`:"&nbsp;"}</div></div>
+    ${liqTile()}
    </div><div class="life">${life}</div>`;
   $$("#hero .lf").forEach(b=>b.onclick=()=>{setCat(b.dataset.cat);document.getElementById("s-near").scrollIntoView({behavior:"smooth"});});
 }
@@ -925,8 +949,12 @@ function renderCmp(){
     return `<tr${tab?` data-go="${x.t.key}" style="cursor:pointer"`:""}><td style="white-space:normal;min-width:120px">${c?`<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${c};margin-right:6px"></i>`:""}${x.t.fav?"★ ":""}${esc(x.t.label)}${tab?"":' <span style="color:var(--muted);font-size:11px">비교 전용</span>'}</td>
       <td><b>${d.med1m!=null?d.med1m.toFixed(2):"-"}</b></td>
       <td style="color:${(d.ytd||0)>=0?"var(--up)":"var(--down)"}">${d.ytd!=null?(d.ytd>=0?"+":"")+d.ytd+"%":"-"}</td>
-      <td>${d.hoga&&d.hoga.art_med?`${d.hoga.art_lo}~${d.hoga.art_hi}`:"-"}</td></tr>`;}).join("");
-  $("#cmptbl").innerHTML=`<table class="tbl"><thead><tr><th>단지</th><th>대표(억)</th><th>올해</th><th>호가(억)</th></tr></thead><tbody>${rows}</tbody></table>`;
+      <td>${d.hoga&&d.hoga.art_med?`${d.hoga.art_lo}~${d.hoga.art_hi}`:"-"}</td>
+      ${(()=>{const q=liqGrade(d,GRP);return `<td>${q.to!=null?`<span class="lg ${q.cls}">${q.to.toFixed(1)}%</span>${q.thin?'<small style="color:var(--muted)">*</small>':""}`:"-"}</td><td>${q.moi?Math.round(q.moi)+"개월":"-"}</td>`;})()}</tr>`;}).join("");
+  $("#cmptbl").innerHTML=`<table class="tbl"><thead><tr><th>단지</th><th>대표(억)</th><th>올해</th><th>호가(억)</th><th>회전율</th><th>매물 소진</th></tr></thead><tbody>${rows}</tbody></table>
+   <div class="note" style="margin-top:10px"><b>환금성</b> — 회전율 = 신고가 끝난 최근 12개월 실거래 ÷ 세대수. ${GRPN[GRP]} 동탄 평균 ${(liqMed(GRP)||{med:0}).med.toFixed(1)}% 기준
+    <span class="lg good">1.15배↑ 좋음</span> <span class="lg mid">보통</span> <span class="lg low">0.85배↓ 낮음</span>.
+    매물 소진 = 지금 매물 ÷ 최근 6개월 월평균 거래 (짧을수록 잘 팔림). * 1년 거래 15건 미만이라 흔들림이 큼. 평형이 다르면 비교하지 마세요(59㎡는 원래 회전율이 높음).</div>`;
   $$("#cmptbl [data-go]").forEach(tr=>tr.onclick=()=>go(tr.dataset.go));
 }
 
